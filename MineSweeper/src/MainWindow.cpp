@@ -29,11 +29,10 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
-#include "CellButton.h"
+#include "BoardWidget.h"
 #include "CustomGameDialog.h"
 
 namespace {
-const int kCellSize = 28;
 const int kAiServerPort = 8765;
 const int kAiStepDelayMs = 300;
 }
@@ -49,7 +48,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // 顶部信息栏：雷数 | 笑脸按钮 | 计时
     auto* topBar = new QHBoxLayout;
 
-    mineCounter_ = new QLCDNumber(3, central);
+    mineCounter_ = new QLCDNumber(6, central);
     mineCounter_->setSegmentStyle(QLCDNumber::Flat);
     mineCounter_->setFixedSize(60, 32);
 
@@ -58,7 +57,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     resetButton_->setFocusPolicy(Qt::NoFocus);
     connect(resetButton_, &QPushButton::clicked, this, &MainWindow::newGame);
 
-    timeCounter_ = new QLCDNumber(3, central);
+    timeCounter_ = new QLCDNumber(6, central);
     timeCounter_->setSegmentStyle(QLCDNumber::Flat);
     timeCounter_->setFixedSize(60, 32);
 
@@ -179,22 +178,14 @@ void MainWindow::buildBoard(int rows, int cols, int mines) {
     timeCounter_->display(0);
     setResetFace(QStringLiteral("🙂"));
 
-    cells_.reserve(rows * cols);
-    for (int r = 0; r < rows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            auto* b = new CellButton(r, c, boardContainer_);
-            b->setMineField(&field_);
-            b->setFixedSize(kCellSize, kCellSize);
-            connect(b, &CellButton::leftClicked, this,
-                    &MainWindow::onCellLeftClicked);
-            connect(b, &CellButton::rightClicked, this,
-                    &MainWindow::onCellRightClicked);
-            connect(b, &CellButton::chordRequested, this,
-                    &MainWindow::onChordRequested);
-            boardLayout_->addWidget(b, r, c);
-            cells_.append(b);
-        }
-    }
+    board_ = new BoardWidget(&field_, boardContainer_);
+    connect(board_, &BoardWidget::leftClicked, this,
+            &MainWindow::onCellLeftClicked);
+    connect(board_, &BoardWidget::rightClicked, this,
+            &MainWindow::onCellRightClicked);
+    connect(board_, &BoardWidget::chordRequested, this,
+            &MainWindow::onChordRequested);
+    boardLayout_->addWidget(board_, 0, 0);
 
     updateCounters();
     statusBar()->clearMessage();
@@ -207,7 +198,7 @@ void MainWindow::clearBoard() {
             w->deleteLater();
         delete item;
     }
-    cells_.clear();
+    board_ = nullptr;
 }
 
 void MainWindow::newGame() {
@@ -280,13 +271,13 @@ void MainWindow::updateClock() {
 }
 
 void MainWindow::syncAllCells() {
-    for (CellButton* b : cells_)
-        b->refresh();
+    if (board_)
+        board_->refresh(field_.takeDirty());
 }
 
 void MainWindow::updateCounters() {
     const int remaining = field_.mineCount() - field_.flaggedCount();
-    mineCounter_->display(qBound(-99, remaining, 999));
+    mineCounter_->display(qBound(-999999, remaining, 999999));
 }
 
 void MainWindow::gameOverHandler(bool won) {
@@ -582,12 +573,9 @@ QJsonObject MainWindow::boardToJson() const {
         for (int c = 0; c < field_.cols(); ++c) {
             const Cell& cell = field_.cell(r, c);
             QJsonObject co;
-            co.insert(QStringLiteral("r"), r);
-            co.insert(QStringLiteral("c"), c);
             if (cell.state == CellState::Revealed) {
                 co.insert(QStringLiteral("state"), QStringLiteral("revealed"));
                 co.insert(QStringLiteral("adjacent"), cell.adjacent);
-                co.insert(QStringLiteral("mine"), cell.mine);
             } else if (cell.state == CellState::Flagged) {
                 co.insert(QStringLiteral("state"), QStringLiteral("flagged"));
             } else {

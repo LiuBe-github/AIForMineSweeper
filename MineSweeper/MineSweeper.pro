@@ -13,13 +13,13 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     src/main.cpp \
     src/MineField.cpp \
-    src/CellButton.cpp \
+    src/BoardWidget.cpp \
     src/MainWindow.cpp \
     src/CustomGameDialog.cpp
 
 HEADERS += \
     src/MineField.h \
-    src/CellButton.h \
+    src/BoardWidget.h \
     src/MainWindow.h \
     src/CustomGameDialog.h
 

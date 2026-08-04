@@ -10,7 +10,7 @@ find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets Network)
 add_executable(MineSweeper
     src/main.cpp
     src/MineField.cpp
-    src/CellButton.cpp
+    src/BoardWidget.cpp
     src/MainWindow.cpp
     src/CustomGameDialog.cpp
 )

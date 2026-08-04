@@ -1,4 +1,4 @@
-#include "CellButton.h"
+#include "BoardWidget.h"
 
 #include <QMouseEvent>
 #include <QPainter>
@@ -104,55 +104,120 @@ void drawNumber(QPainter& p, const QRect& r, int n) {
 
 }  // namespace
 
-CellButton::CellButton(int row, int col, QWidget* parent)
-    : QPushButton(parent), row_(row), col_(col) {
+BoardWidget::BoardWidget(MineField* field, QWidget* parent)
+    : QWidget(parent), field_(field) {
     setFocusPolicy(Qt::NoFocus);
     setContextMenuPolicy(Qt::PreventContextMenu);
+
+    // 格子尺寸自适应：大棋盘自动缩小，保证窗口大致不超出屏幕
+    int px = 28;
+    if (field_->cols() > 0 && field_->cols() * px > 1500)
+        px = qMax(1, 1500 / field_->cols());
+    if (field_->rows() > 0 && field_->rows() * px > 850)
+        px = qMax(1, 850 / field_->rows());
+    cellPx_ = px;
+    setFixedSize(cellPx_ * field_->cols(), cellPx_ * field_->rows());
 }
 
-void CellButton::mousePressEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton) {
-        if (field_ && field_->cell(row_, col_).state == CellState::Revealed)
-            emit chordRequested(row_, col_);
-        else
-            emit leftClicked(row_, col_);
-    } else if (event->button() == Qt::RightButton) {
-        emit rightClicked(row_, col_);
-    } else if (event->button() == Qt::MiddleButton) {
-        emit chordRequested(row_, col_);
+QRect BoardWidget::cellRect(int row, int col) const {
+    return QRect(col * cellPx_, row * cellPx_, cellPx_, cellPx_);
+}
+
+void BoardWidget::refresh(const std::vector<int>& dirtyCells) {
+    if (dirtyCells.empty())
+        return;
+    // 变化的格子太多时整板刷新一次，避免海量 update() 调用
+    if (dirtyCells.size() > 256 || !field_) {
+        update();
+        return;
     }
-    // 不调用基类，避免按钮自身的按下样式覆盖自绘效果
+    for (int idx : dirtyCells) {
+        const int r = idx / field_->cols();
+        const int c = idx % field_->cols();
+        update(cellRect(r, c));
+    }
 }
 
-void CellButton::paintEvent(QPaintEvent*) {
+void BoardWidget::paintEvent(QPaintEvent* event) {
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::Antialiasing, cellPx_ >= 12);
 
-    const QRect r = rect();
-    const Cell& cell = field_ ? field_->cell(row_, col_) : Cell();
+    // 只绘制暴露/变化的区域，超大棋盘下也保持流畅
+    const QRect exposed = event->rect();
+    const int r0 = qMax(0, exposed.top() / cellPx_);
+    const int r1 = qMin(field_->rows() - 1, exposed.bottom() / cellPx_);
+    const int c0 = qMax(0, exposed.left() / cellPx_);
+    const int c1 = qMin(field_->cols() - 1, exposed.right() / cellPx_);
+    for (int r = r0; r <= r1; ++r)
+        for (int c = c0; c <= c1; ++c)
+            paintCell(p, r, c);
+}
+
+void BoardWidget::paintCell(QPainter& p, int row, int col) {
+    const QRect rect = cellRect(row, col);
+    const Cell& cell = field_->cell(row, col);
     const bool hidden = (cell.state == CellState::Hidden ||
                          cell.state == CellState::Flagged);
 
+    // 极小格子：只画基础色块，保证超大棋盘刷新速度
+    if (cellPx_ < 6) {
+        if (hidden) {
+            p.fillRect(rect, kFaceColor);
+        } else {
+            p.fillRect(rect, kRevealedFace);
+        }
+        if (cell.state == CellState::Flagged) {
+            p.fillRect(rect.adjusted(rect.width() / 3, rect.height() / 3,
+                                     -rect.width() / 3, -rect.height() / 3),
+                       QColor(208, 0, 0));
+        } else if (!hidden && cell.detonated) {
+            p.fillRect(rect, QColor(255, 0, 0));
+        } else if (!hidden && cell.mine) {
+            p.fillRect(rect, QColor(25, 25, 25));
+        }
+        return;
+    }
+
     if (hidden) {
-        drawRaisedBevel(p, r);
+        drawRaisedBevel(p, rect);
         if (cell.state == CellState::Flagged)
-            drawFlag(p, r);
+            drawFlag(p, rect);
         return;
     }
 
     // 已翻开
-    p.fillRect(r, kRevealedFace);
+    p.fillRect(rect, kRevealedFace);
     p.setPen(QColor(128, 128, 128));
-    p.drawRect(r.adjusted(0, 0, -1, -1));
+    p.drawRect(rect.adjusted(0, 0, -1, -1));
 
     if (cell.detonated) {
-        p.fillRect(r.adjusted(1, 1, -1, -1), QColor(255, 0, 0));
+        p.fillRect(rect.adjusted(1, 1, -1, -1), QColor(255, 0, 0));
     }
     if (cell.wrongFlag) {
-        drawWrongFlag(p, r);
+        drawWrongFlag(p, rect);
     } else if (cell.mine) {
-        drawMine(p, r);
+        drawMine(p, rect);
     } else if (cell.adjacent > 0) {
-        drawNumber(p, r, cell.adjacent);
+        drawNumber(p, rect, cell.adjacent);
+    }
+}
+
+void BoardWidget::mousePressEvent(QMouseEvent* event) {
+    if (!field_)
+        return;
+    const int r = event->y() / cellPx_;
+    const int c = event->x() / cellPx_;
+    if (!field_->inBounds(r, c))
+        return;
+
+    if (event->button() == Qt::LeftButton) {
+        if (field_->cell(r, c).state == CellState::Revealed)
+            emit chordRequested(r, c);
+        else
+            emit leftClicked(r, c);
+    } else if (event->button() == Qt::RightButton) {
+        emit rightClicked(r, c);
+    } else if (event->button() == Qt::MiddleButton) {
+        emit chordRequested(r, c);
     }
 }

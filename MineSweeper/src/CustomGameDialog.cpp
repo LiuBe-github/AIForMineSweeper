@@ -8,14 +8,19 @@ CustomGameDialog::CustomGameDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(QStringLiteral("自定义游戏"));
 
     rowsBox_ = new QSpinBox(this);
-    rowsBox_->setRange(9, 30);
+    rowsBox_->setRange(9, 1000);
     rowsBox_->setValue(16);
     colsBox_ = new QSpinBox(this);
-    colsBox_->setRange(9, 30);
+    colsBox_->setRange(9, 1000);
     colsBox_->setValue(16);
     minesBox_ = new QSpinBox(this);
-    minesBox_->setRange(1, 899);
+    minesBox_->setRange(1, 999999);
     minesBox_->setValue(40);
+    connect(rowsBox_, qOverload<int>(&QSpinBox::valueChanged), this,
+            &CustomGameDialog::updateMinesMax);
+    connect(colsBox_, qOverload<int>(&QSpinBox::valueChanged), this,
+            &CustomGameDialog::updateMinesMax);
+    updateMinesMax();
 
     auto* form = new QFormLayout(this);
     form->addRow(QStringLiteral("行数："), rowsBox_);
@@ -48,9 +53,18 @@ void CustomGameDialog::setValues(int rows, int cols, int mines) {
     minesBox_->setValue(mines);
 }
 
+void CustomGameDialog::updateMinesMax() {
+    const qint64 maxMines =
+        qint64(rowsBox_->value()) * colsBox_->value() - 1;
+    const int max = static_cast<int>(qMin<qint64>(maxMines, 999999));
+    minesBox_->setMaximum(qMax(1, max));
+    if (minesBox_->value() > minesBox_->maximum())
+        minesBox_->setValue(minesBox_->maximum());
+}
+
 void CustomGameDialog::accept() {
-    const int maxMines = rows() * cols() - 1;
+    const qint64 maxMines = qint64(rows()) * cols() - 1;
     if (mines() > maxMines)
-        minesBox_->setValue(maxMines);
+        minesBox_->setValue(static_cast<int>(maxMines));
     QDialog::accept();
 }

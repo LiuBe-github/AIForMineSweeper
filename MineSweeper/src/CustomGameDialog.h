@@ -20,6 +20,8 @@ protected:
     void accept() override;
 
 private:
+    void updateMinesMax();
+
     QSpinBox* rowsBox_ = nullptr;
     QSpinBox* colsBox_ = nullptr;
     QSpinBox* minesBox_ = nullptr;

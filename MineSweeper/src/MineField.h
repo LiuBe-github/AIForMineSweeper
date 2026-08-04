@@ -39,6 +39,10 @@ public:
     const Cell& cell(int row, int col) const { return grid_[row][col]; }
     bool inBounds(int row, int col) const;
 
+    // 返回自上次调用以来状态发生变化的格子索引（r*cols+c），并清空记录；
+    // 供界面只重绘变化的格子，大棋盘下显著降低刷新开销。
+    std::vector<int> takeDirty();
+
     // 左键翻开；首次点击时布雷，保证首格（及周围）安全
     void reveal(int row, int col);
     // 右键插旗/取消旗
@@ -52,8 +56,10 @@ private:
     void floodReveal(int row, int col);
     void revealAllMines();
     void checkWin();
+    void markDirty(int row, int col);
 
     std::vector<std::vector<Cell>> grid_;
+    std::vector<int> dirtyCells_;
     int rows_ = 0;
     int cols_ = 0;
     int mines_ = 0;

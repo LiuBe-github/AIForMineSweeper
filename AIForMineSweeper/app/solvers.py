@@ -14,6 +14,9 @@ ENGINE_HEURISTIC = "heuristic"  # 内置求解器，无需 API Key
 _HEURISTIC_ALIASES = ("heuristic", "web", "builtin", "local",
                       "dry-run", "dry_run")
 
+# 超过该格数的棋盘不再发给大模型：Prompt 会超出上下文长度，直接本地求解
+MAX_LLM_CELLS = 100000
+
 
 def resolve_engine(payload, cfg=None, force_heuristic=False):
     if force_heuristic:
@@ -31,6 +34,11 @@ def solve_payload(payload, cfg=None, force_heuristic=False):
     返回的走法附带 engine/model 字段，供客户端记录实际使用的 AI 信息。"""
     cfg = cfg or load_config()
     engine = resolve_engine(payload, cfg, force_heuristic)
+    cells = payload.get("cells") or []
+    if engine == ENGINE_API and len(cells) > MAX_LLM_CELLS:
+        print("[WARN] 棋盘过大（%d 格），超出大模型上下文，改用本地启发式求解"
+              % len(cells), file=sys.stderr)
+        engine = ENGINE_HEURISTIC
     if engine == ENGINE_HEURISTIC:
         move = solve_heuristic(payload)
         move["engine"] = "heuristic"

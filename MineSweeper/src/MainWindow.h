@@ -2,7 +2,6 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QVector>
 
 #include "MineField.h"
 
@@ -14,7 +13,7 @@ class QProcess;
 class QPushButton;
 class QTimer;
 class QWidget;
-class CellButton;
+class BoardWidget;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -61,10 +60,10 @@ private:
 
     Difficulty difficulty_ = Beginner;
     MineField field_;
-    QVector<CellButton*> cells_;
 
     QGridLayout* boardLayout_ = nullptr;
     QWidget* boardContainer_ = nullptr;
+    BoardWidget* board_ = nullptr;
     QLCDNumber* mineCounter_ = nullptr;
     QLCDNumber* timeCounter_ = nullptr;
     QPushButton* resetButton_ = nullptr;

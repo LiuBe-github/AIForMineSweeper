@@ -12,9 +12,11 @@ MineField::MineField(int rows, int cols, int mines) {
 void MineField::reset(int rows, int cols, int mines) {
     rows_ = rows;
     cols_ = cols;
-    const int maxMines = rows * cols - 1;
-    mines_ = std::clamp(mines, 0, maxMines > 0 ? maxMines : 0);
+    const long long maxMines = 1LL * rows * cols - 1;
+    mines_ = static_cast<int>(
+        std::clamp<long long>(mines, 0, maxMines > 0 ? maxMines : 0));
     grid_.assign(rows_, std::vector<Cell>(cols_));
+    dirtyCells_.clear();
     revealed_ = 0;
     flagged_ = 0;
     firstClickDone_ = false;
@@ -28,6 +30,16 @@ void MineField::reset() {
 
 bool MineField::inBounds(int row, int col) const {
     return row >= 0 && row < rows_ && col >= 0 && col < cols_;
+}
+
+std::vector<int> MineField::takeDirty() {
+    std::vector<int> dirty;
+    dirty.swap(dirtyCells_);
+    return dirty;
+}
+
+void MineField::markDirty(int row, int col) {
+    dirtyCells_.push_back(row * cols_ + col);
 }
 
 void MineField::placeMines(int safeRow, int safeCol) {
@@ -96,6 +108,7 @@ void MineField::reveal(int row, int col) {
     if (cell.mine) {
         cell.state = CellState::Revealed;
         cell.detonated = true;
+        markDirty(row, col);
         gameOver_ = true;
         won_ = false;
         revealAllMines();
@@ -106,29 +119,38 @@ void MineField::reveal(int row, int col) {
         floodReveal(row, col);
     else {
         cell.state = CellState::Revealed;
+        markDirty(row, col);
         ++revealed_;
     }
     checkWin();
 }
 
 void MineField::floodReveal(int row, int col) {
-    if (!inBounds(row, col))
-        return;
-    Cell& cell = grid_[row][col];
-    if (cell.state != CellState::Hidden || cell.mine)
-        return;
+    // 迭代式扩散，避免超大空旷区域导致递归爆栈
+    std::vector<std::pair<int, int>> stack;
+    stack.reserve(static_cast<size_t>(rows_ * cols_));
+    stack.emplace_back(row, col);
+    while (!stack.empty()) {
+        const auto [r, c] = stack.back();
+        stack.pop_back();
+        if (!inBounds(r, c))
+            continue;
+        Cell& cell = grid_[r][c];
+        if (cell.state != CellState::Hidden || cell.mine)
+            continue;
 
-    cell.state = CellState::Revealed;
-    ++revealed_;
+        cell.state = CellState::Revealed;
+        markDirty(r, c);
+        ++revealed_;
 
-    // 数字格停止扩散
-    if (cell.adjacent != 0)
-        return;
-
-    for (int dr = -1; dr <= 1; ++dr)
-        for (int dc = -1; dc <= 1; ++dc)
-            if (dr != 0 || dc != 0)
-                floodReveal(row + dr, col + dc);
+        // 数字格停止扩散
+        if (cell.adjacent != 0)
+            continue;
+        for (int dr = -1; dr <= 1; ++dr)
+            for (int dc = -1; dc <= 1; ++dc)
+                if (dr != 0 || dc != 0)
+                    stack.emplace_back(r + dr, c + dc);
+    }
 }
 
 void MineField::toggleFlag(int row, int col) {
@@ -140,9 +162,11 @@ void MineField::toggleFlag(int row, int col) {
         return;
     if (cell.state == CellState::Hidden) {
         cell.state = CellState::Flagged;
+        markDirty(row, col);
         ++flagged_;
     } else {
         cell.state = CellState::Hidden;
+        markDirty(row, col);
         --flagged_;
     }
 }
@@ -185,6 +209,7 @@ void MineField::chord(int row, int col) {
             if (n.mine) {
                 n.state = CellState::Revealed;
                 n.detonated = true;
+                markDirty(nr, nc);
                 gameOver_ = true;
                 won_ = false;
                 revealAllMines();
@@ -194,6 +219,7 @@ void MineField::chord(int row, int col) {
                 floodReveal(nr, nc);
             else {
                 n.state = CellState::Revealed;
+                markDirty(nr, nc);
                 ++revealed_;
             }
         }
@@ -210,12 +236,14 @@ void MineField::revealAllMines() {
                 continue;
             if (cell.mine) {
                 cell.state = CellState::Revealed;
+                markDirty(r, c);
                 continue;
             }
             // 插错的旗显示为红叉
             if (cell.state == CellState::Flagged) {
                 cell.wrongFlag = true;
                 cell.state = CellState::Revealed;
+                markDirty(r, c);
                 --flagged_;
             }
         }
@@ -223,7 +251,7 @@ void MineField::revealAllMines() {
 }
 
 void MineField::checkWin() {
-    if (revealed_ != rows_ * cols_ - mines_)
+    if (revealed_ != static_cast<int>(1LL * rows_ * cols_ - mines_))
         return;
     gameOver_ = true;
     won_ = true;
@@ -232,6 +260,7 @@ void MineField::checkWin() {
         for (int c = 0; c < cols_; ++c) {
             if (grid_[r][c].mine && grid_[r][c].state == CellState::Hidden) {
                 grid_[r][c].state = CellState::Flagged;
+                markDirty(r, c);
                 ++flagged_;
             }
         }
