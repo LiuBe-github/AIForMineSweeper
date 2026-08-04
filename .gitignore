@@ -1,0 +1,27 @@
+# IDE / 系统文件
+.idea/
+.vscode/
+*.user
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# 本地敏感配置与运行数据（子目录 .gitignore 也会兜底）
+AIForMineSweeper/config.json
+AIForMineSweeper/solve_records.txt
+
+# Qt/C++ 构建产物
+MineSweeper/bin/
+MineSweeper/Makefile
+MineSweeper/Makefile.*
+MineSweeper/moc_*.cpp
+MineSweeper/moc_predefs.h
+MineSweeper/.qmake.stash
+MineSweeper/.qtc_clangd/
+*.o
+*.obj
+*.exe
+release/
+debug/

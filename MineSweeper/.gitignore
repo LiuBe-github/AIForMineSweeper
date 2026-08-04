@@ -1,0 +1,10 @@
+Makefile
+Makefile.*
+*.o
+*.obj
+*.pdb
+release/
+debug/
+bin/
+.qmake.stash
+.qtc_clangd/

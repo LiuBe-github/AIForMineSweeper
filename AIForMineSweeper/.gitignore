@@ -1,0 +1,4 @@
+config.json
+solve_records.txt
+__pycache__/
+*.pyc
