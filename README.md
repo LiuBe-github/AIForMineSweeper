@@ -2,6 +2,8 @@
 
 一个用 **AI 自动通关扫雷** 的项目：经典扫雷游戏（C++ / Qt 5）配合本地 Python 服务，
 把棋盘状态交给求解引擎，引擎返回下一步动作，游戏自动执行并循环直到通关。
+仓库同时包含一个**本地强化学习训练项目**（MyAIMineSweeper），用于离线训练自己的
+扫雷 AI 模型，训练产物可进一步接入服务端，成为新的求解引擎。
 
 ```text
 MineSweeper.exe（Qt 客户端）
@@ -10,7 +12,11 @@ MineSweeper.exe（Qt 客户端）
 server.py（Python 本地服务）
         │
         ├─ engine=api        → DeepSeek API（仅“需要猜”的局面才调用）
-        └─ engine=heuristic  → 内置确定性推理 + 概率估计（纯本地，无需联网）
+        ├─ engine=heuristic  → 内置确定性推理 + 概率估计（纯本地，无需联网）
+        └─ engine=local（规划中）→ 加载 MyAIMineSweeper 训练出的本地模型
+
+MyAIMineSweeper（离线 RL 训练，先做 9×9）
+        └─ 训练 DQN（CPU/GPU）→ 导出模型 → 接入服务端 local 引擎
 ```
 
 ## 功能特性
@@ -32,6 +38,13 @@ server.py（Python 本地服务）
   大模型输出异常而中断
 - **可观测**：通关记录包含引擎、模型、网络延迟与去除网络等待后的真实用时
 
+### 本地强化学习训练（MyAIMineSweeper/）
+
+- 9×9 / 10 雷扫雷环境，规则与游戏完全一致（首击安全、洪泛展开、插旗、胜负判定）
+- CSP 约束求解 baseline：确定性推理 + 概率估计，实测通关率约 **72.8%**
+- DQN 训练：CPU 版与 GPU 版（CUDA + 混合精度 AMP），网络结构同构、结果可互评
+- 评估脚本：`random` / `csp` / `dqn` / `dqn_gpu` 一键对比通关率、步数、单步延迟
+
 ## 目录结构
 
 ```text
@@ -41,12 +54,20 @@ AIForMineSweeper/
 │   ├── CMakeLists.txt      # CMake 工程
 │   ├── build.bat           # 一键构建脚本
 │   ├── run.bat             # 运行脚本
-│   └── src/                # 客户端源码（MainWindow / MineField / CellButton …）
-└── AIForMineSweeper/       # Python 本地求解服务
-    ├── server.py           # 服务入口
-    ├── config.example.json # 配置模板（可提交）
-    ├── config.json         # 本地配置（含 API Key，不入库）
-    └── app/                # 配置加载 / Prompt / API 调用 / 校验 / 求解器 / HTTP
+│   └── src/                # 客户端源码（MainWindow / MineField / BoardWidget …）
+├── AIForMineSweeper/       # Python 本地求解服务
+│   ├── server.py           # 服务入口
+│   ├── config.example.json # 配置模板（可提交）
+│   ├── config.json         # 本地配置（含 API Key，不入库）
+│   └── app/                # 配置加载 / Prompt / API 调用 / 校验 / 求解器 / HTTP
+└── MyAIMineSweeper/        # 本地强化学习训练项目（9×9 DQN）
+    ├── minesweeper_env.py  # 扫雷环境（规则与游戏一致）
+    ├── csp_solver.py       # 约束求解 baseline
+    ├── dqn_agent.py        # CPU 版 DQN
+    ├── dqn_agent_gpu.py    # GPU 版 DQN（CUDA + AMP）
+    ├── train_dqn.py        # CPU 训练入口
+    ├── train_dqn_gpu.py    # GPU 训练入口
+    └── evaluate.py         # random / csp / dqn / dqn_gpu 评估
 ```
 
 ## 环境要求
@@ -54,6 +75,7 @@ AIForMineSweeper/
 - Windows
 - 客户端：Qt 5.15.2（本机为 Anaconda 内置 MSVC 版 Qt）+ Visual Studio（MSVC x64）
 - 服务端：Python 3.9+（仅使用标准库，无需额外安装依赖）
+- RL 训练：Python 3.9+，`numpy` + `torch`（CPU 版即可；有 NVIDIA GPU 可装 CUDA 版）
 
 ## 构建客户端
 
@@ -128,6 +150,64 @@ python AIForMineSweeper\server.py --dry-run
 ```
 
 此时 `/solve` 强制使用内置启发式策略，方便在没有 API Key 的情况下验证完整联动流程。
+
+## 本地强化学习训练（MyAIMineSweeper/）
+
+项目目标是训练一个本地模型解 9×9 扫雷，并追求解题效率（通关率、步数、单步延迟）。
+详见 `MyAIMineSweeper/README.md`。
+
+### 安装依赖
+
+```bat
+cd MyAIMineSweeper
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+有 NVIDIA GPU（如 RTX 3060）时，另建 GPU 环境安装 CUDA 版 PyTorch：
+
+```bat
+python -m venv .venv-gpu
+.venv-gpu\Scripts\python -m pip install numpy
+.venv-gpu\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+### 训练
+
+CPU：
+
+```bat
+.venv\Scripts\python train_dqn.py --episodes 20000
+```
+
+GPU（RTX 3060，默认开启混合精度）：
+
+```bat
+.venv-gpu\Scripts\python train_dqn_gpu.py --episodes 100000 --amp --net-width 64
+```
+
+每 `--log-every` 局打印一次滚动通关率，模型自动保存到 `checkpoints/`。
+
+### 评估
+
+```bat
+.venv\Scripts\python evaluate.py --agent csp --episodes 500        # 基准线
+.venv\Scripts\python evaluate.py --agent dqn --model checkpoints\dqn_9x9.pt
+.venv-gpu\Scripts\python evaluate.py --agent dqn_gpu --model checkpoints\dqn_gpu_9x9.pt
+```
+
+当前 9×9 基准（供模型效果对比）：
+
+| 求解器 | 通关率 | 平均步数 | 单步延迟 |
+| --- | --- | --- | --- |
+| 随机 | ~0% | 4~5 | 0.1ms |
+| CSP 约束求解 | ~72.8% | ~24.8 | 0.1ms |
+
+### 后续规划
+
+- 给 DQN 增加插旗 / chord 动作，进一步提高胜率与步数效率
+- 约束概率 + NN 混合：NN 只在无必然解时做猜测
+- 把训练好的模型接入服务端，新增 `engine=local`，游戏下拉栏增加“本地模型”选项
 
 ## HTTP 接口
 
@@ -209,6 +289,8 @@ AI 步数: 22
   检查任务管理器是否有残留的 python 进程并结束。
 - **通关率与速度**：混合策略下 9x9 初级实测 9~19 秒通关；追求极致效率可选用
   “网页默认模型（内置求解器）”（纯本地、零费用）。
+- **RL 训练通关率一直为 0**：训练早期 ε 还很大、模型在纯探索，属正常现象；
+  跑满探索衰减（默认 20 万~50 万步）后再看滚动通关率，并优先与 CSP 基准对比。
 
 ## 安全说明
 
